@@ -1,0 +1,8 @@
+{
+  "interface": "",
+  "client_ipv4": "",
+  "client_mac": "",
+  "gateway_ipv4": "",
+  "provider_dns_ipv4": "",
+  "root_dns_ipv4": "198.41.0.4"
+}
