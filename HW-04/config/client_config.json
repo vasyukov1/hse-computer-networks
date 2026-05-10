@@ -1,0 +1,9 @@
+{
+  "client_id": "84ce0f2d0cf867daf6455fd0bf20d8e1",
+  "sync_dir": "/Users/alexvasyukov/Documents/GitHub/hse-computer-networks/HW-04/demo/client_data",
+  "server_host": "127.0.0.1",
+  "server_port": 9090,
+  "max_connections": 8,
+  "transfer_mode": "dma",
+  "buffer_size_bytes": 1048576
+}
