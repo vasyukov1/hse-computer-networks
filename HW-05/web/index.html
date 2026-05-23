@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WebSocket Protobuf Chat</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f2f5f8;
+      --panel: #ffffff;
+      --ink: #17212b;
+      --muted: #6b7785;
+      --line: #d7e0ea;
+      --soft: #f7f9fb;
+      --accent: #1f7a6d;
+      --accent-2: #2f5f98;
+      --danger: #b42318;
+      --sent: #dff3ec;
+      --private: #fff0c2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        linear-gradient(180deg, #e7eef5 0, var(--bg) 260px);
+      color: var(--ink);
+    }
+    main {
+      width: min(1040px, calc(100vw - 28px));
+      margin: 24px auto;
+      display: grid;
+      gap: 12px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: end;
+      padding: 4px 2px 2px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 30px;
+      line-height: 1.15;
+    }
+    .subtitle {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .toolbar, .composer, .status {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 12px 30px rgba(35, 50, 70, .08);
+    }
+    .toolbar, .composer {
+      padding: 14px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    label {
+      font-size: 13px;
+      color: var(--muted);
+      display: grid;
+      gap: 4px;
+    }
+    input[type="text"] {
+      width: 250px;
+      height: 42px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font-size: 15px;
+      background: #fff;
+    }
+    button {
+      height: 42px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    button.secondary { background: var(--accent-2); }
+    button:disabled {
+      cursor: not-allowed;
+      opacity: .48;
+    }
+    .status {
+      min-height: 46px;
+      padding: 12px 14px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .status strong { color: var(--ink); }
+    .chat-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 12px 30px rgba(35, 50, 70, .08);
+      min-width: 0;
+      overflow: hidden;
+    }
+    .chat-log {
+      min-height: 360px;
+      max-height: 560px;
+      overflow: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.75), rgba(247,249,251,.95));
+    }
+    .empty {
+      margin: auto;
+      color: var(--muted);
+      text-align: center;
+      font-size: 15px;
+    }
+    .bubble {
+      max-width: min(72%, 520px);
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      align-self: flex-start;
+    }
+    .bubble.own {
+      align-self: flex-end;
+      background: var(--sent);
+      border-color: #b9dfd1;
+    }
+    .bubble.private {
+      background: var(--private);
+      border-color: #ead68f;
+    }
+    .bubble-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .avatar {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: var(--accent-2);
+      color: #fff;
+      display: inline-grid;
+      place-items: center;
+      font-size: 12px;
+      flex: 0 0 auto;
+    }
+    .bubble-text {
+      font-size: 15px;
+      line-height: 1.38;
+      overflow-wrap: anywhere;
+    }
+    .bubble img.attachment {
+      display: block;
+      width: min(100%, 320px);
+      max-height: 280px;
+      object-fit: cover;
+      margin-top: 8px;
+      border-radius: 7px;
+      border: 1px solid rgba(0,0,0,.08);
+    }
+    .picked {
+      color: var(--muted);
+      font-size: 13px;
+      max-width: 260px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .error { color: var(--danger); }
+    @media (max-width: 650px) {
+      input[type="text"] { width: 100%; }
+      button { flex: 1 1 140px; }
+      .toolbar, .composer { align-items: stretch; }
+      .bubble { max-width: 92%; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>HW-05 Chat</h1>
+      <p class="subtitle">WebSocket binary mode + Protocol Buffers</p>
+    </div>
+  </header>
+
+  <section class="toolbar">
+    <label>Имя
+      <input id="nameInput" type="text" maxlength="25" placeholder="Например, alex">
+    </label>
+    <button id="iconButton" class="secondary">Иконка</button>
+    <button id="joinButton">Присоединиться</button>
+    <span id="iconName" class="picked"></span>
+    <input id="iconFile" type="file" accept="image/png,image/jpeg" hidden>
+  </section>
+
+  <section id="status" class="status">
+    <span>Введите имя и нажмите «Присоединиться».</span>
+    <strong>offline</strong>
+  </section>
+
+  <section class="chat-panel">
+    <div id="chatLog" class="chat-log">
+      <div class="empty">После подключения здесь появятся сообщения.</div>
+    </div>
+  </section>
+
+  <section class="composer">
+    <label>Сообщение до 25 символов
+      <input id="messageInput" type="text" maxlength="25" placeholder="@name привет">
+    </label>
+    <button id="attachButton" class="secondary" disabled>Прикрепить</button>
+    <button id="sendButton" disabled>Отправить</button>
+    <span id="attachName" class="picked"></span>
+    <input id="imageFile" type="file" accept="image/png,image/jpeg" hidden>
+  </section>
+
+</main>
+
+<script>
+(() => {
+  const MAX_IMAGE = 1024 * 1024;
+  const retrySeconds = 10;
+
+  const $ = (id) => document.getElementById(id);
+  const nameInput = $("nameInput");
+  const messageInput = $("messageInput");
+  const chatLog = $("chatLog");
+  const status = $("status");
+  const joinButton = $("joinButton");
+  const sendButton = $("sendButton");
+  const attachButton = $("attachButton");
+  const iconButton = $("iconButton");
+  const imageFile = $("imageFile");
+  const iconFile = $("iconFile");
+  const attachName = $("attachName");
+  const iconName = $("iconName");
+
+  let ws = null;
+  let seq = 1;
+  let joined = false;
+  let pendingImage = null;
+  let pendingIcon = null;
+  let retryTimer = null;
+  let suppressRetry = false;
+  let myName = "";
+
+  const enc = new TextEncoder();
+  const dec = new TextDecoder();
+
+  function setStatus(text, mode = "offline", isError = false) {
+    status.innerHTML = `<span class="${isError ? "error" : ""}">${escapeHtml(text)}</span><strong>${mode}</strong>`;
+  }
+
+  function setChatEnabled(enabled) {
+    messageInput.disabled = !enabled;
+    sendButton.disabled = !enabled;
+    attachButton.disabled = !enabled;
+  }
+
+  function setJoinEnabled(enabled) {
+    nameInput.disabled = !enabled;
+    joinButton.disabled = !enabled;
+    iconButton.disabled = !enabled;
+  }
+
+  function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;"
+    }[ch]));
+  }
+
+  function renderMessage(msg) {
+    appendBubble(msg);
+  }
+
+  function appendBubble(msg) {
+    const empty = chatLog.querySelector(".empty");
+    if (empty) empty.remove();
+    const bubble = document.createElement("article");
+    bubble.className = `bubble${msg.from === myName ? " own" : ""}${msg.private ? " private" : ""}`;
+    const title = msg.private ? `${msg.from} -> ${msg.to || "?"}` : msg.from;
+    const avatar = msg.senderIcon
+      ? `<img class="avatar" alt="" src="${URL.createObjectURL(new Blob([msg.senderIcon.data], { type: msg.senderIcon.mimeType }))}">`
+      : `<span class="avatar">${escapeHtml((msg.from || "?").slice(0, 1).toUpperCase())}</span>`;
+    const image = msg.image
+      ? `<img class="attachment" alt="" src="${URL.createObjectURL(new Blob([msg.image.data], { type: msg.image.mimeType || "application/octet-stream" }))}">`
+      : "";
+    bubble.innerHTML = `
+      <div class="bubble-head">${avatar}<span>${escapeHtml(title)}</span></div>
+      <div class="bubble-text">${escapeHtml(msg.text || "изображение")}</div>
+      ${image}
+    `;
+    chatLog.append(bubble);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+
+  function appendSystemImage(image, caption) {
+    appendBubble({
+      from: "history",
+      text: caption,
+      image,
+      private: false,
+    });
+  }
+
+  function startRetry() {
+    if (suppressRetry) return;
+    let left = retrySeconds;
+    setChatEnabled(false);
+    setJoinEnabled(false);
+    setStatus(`Соединение не установлено. Повтор через ${left} сек.`, "retry", true);
+    clearInterval(retryTimer);
+    retryTimer = setInterval(() => {
+      left -= 1;
+      if (left <= 0) {
+        clearInterval(retryTimer);
+        retryTimer = null;
+        connectAndJoin();
+      } else {
+        setStatus(`Соединение не установлено. Повтор через ${left} сек.`, "retry", true);
+      }
+    }, 1000);
+  }
+
+  async function connectAndJoin() {
+    const name = nameInput.value.trim();
+    if (!name) {
+      setStatus("Введите имя пользователя.", "offline", true);
+      return;
+    }
+    setJoinEnabled(false);
+    setChatEnabled(false);
+    if (retryTimer) {
+      clearInterval(retryTimer);
+      retryTimer = null;
+    }
+    suppressRetry = false;
+    setStatus("Подключение к WebSocket...", "connecting");
+
+    ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+    ws.binaryType = "arraybuffer";
+    ws.onopen = () => {
+      setStatus("WebSocket открыт, отправляю protobuf JoinRequest.", "joining");
+      sendJoin(name);
+    };
+    ws.onerror = () => startRetry();
+    ws.onclose = () => {
+      if (joined) {
+        joined = false;
+        setChatEnabled(false);
+        setJoinEnabled(true);
+        setStatus("Соединение закрыто.", "offline", true);
+      } else if (!suppressRetry && !retryTimer) {
+        startRetry();
+      }
+    };
+    ws.onmessage = (event) => handleResponse(new Uint8Array(event.data));
+  }
+
+  function sendJoin(name) {
+    const join = new ProtoWriter();
+    join.string(1, name);
+    if (pendingIcon) join.message(2, encodeImage(pendingIcon));
+    join.varintField(3, 1);
+    join.varintField(4, 50);
+
+    const req = new ProtoWriter();
+    req.varintField(1, seq++);
+    req.message(2, join.finish());
+    ws.send(req.finish());
+  }
+
+  function sendChat() {
+    if (!joined || !ws || ws.readyState !== WebSocket.OPEN) return;
+    let text = messageInput.value.trim();
+    let to = "";
+    const direct = text.match(/^@([^\s]+)(?:\s+(.*))?$/);
+    if (direct && (direct[2] || pendingImage)) {
+      to = direct[1];
+      text = (direct[2] || "").trim();
+    }
+    const payload = new ProtoWriter();
+    payload.string(1, text);
+    if (to) payload.string(2, to);
+    if (pendingImage) payload.message(3, encodeImage(pendingImage));
+
+    const req = new ProtoWriter();
+    req.varintField(1, seq++);
+    req.message(3, payload.finish());
+    ws.send(req.finish());
+
+    messageInput.value = "";
+    pendingImage = null;
+    attachName.textContent = "";
+  }
+
+  function handleResponse(bytes) {
+    const resp = decodeServerResponse(bytes);
+    if (!resp.ok) {
+      setStatus(resp.error ? resp.error.message : "Ошибка сервера.", "error", true);
+      if (!joined) {
+        suppressRetry = true;
+        setJoinEnabled(true);
+        setChatEnabled(false);
+        if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+      }
+      return;
+    }
+    if (resp.history) {
+      joined = true;
+      myName = nameInput.value.trim();
+      setJoinEnabled(false);
+      setChatEnabled(true);
+      chatLog.innerHTML = "";
+      setStatus("Подключено. История получена от сервера.", "online");
+      for (const msg of resp.history.messages) renderMessage(msg);
+      if (!resp.history.messages.length) {
+        chatLog.innerHTML = `<div class="empty">История пуста. Напишите первое сообщение.</div>`;
+      }
+      if (resp.history.lastImage && !resp.history.messages.length) {
+        appendSystemImage(resp.history.lastImage, "последнее изображение истории");
+      }
+    }
+    if (resp.message) renderMessage(resp.message);
+    if (resp.info === "pong") setStatus("Pong от сервера.", "online");
+  }
+
+  async function readChosenImage(file) {
+    if (!file) return null;
+    const data = new Uint8Array(await file.arrayBuffer());
+    const mimeType = normalizeImageType(file.type, data);
+    if (!mimeType) {
+      setStatus("Можно прикреплять только PNG или JPEG.", joined ? "online" : "offline", true);
+      return null;
+    }
+    if (file.size > MAX_IMAGE) {
+      setStatus("Файл больше 1 МБ.", joined ? "online" : "offline", true);
+      return null;
+    }
+    return { mimeType, data, sizeBytes: data.length, name: file.name };
+  }
+
+  function normalizeImageType(type, data) {
+    const declared = String(type || "").toLowerCase();
+    if (declared === "image/png" || declared === "image/x-png") return "image/png";
+    if (declared === "image/jpeg" || declared === "image/jpg" || declared === "image/pjpeg") return "image/jpeg";
+    if (data.length >= 8 &&
+      data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47 &&
+      data[4] === 0x0d && data[5] === 0x0a && data[6] === 0x1a && data[7] === 0x0a) {
+      return "image/png";
+    }
+    if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
+      return "image/jpeg";
+    }
+    return "";
+  }
+
+  joinButton.onclick = connectAndJoin;
+  sendButton.onclick = sendChat;
+  messageInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      sendChat();
+    }
+  });
+  attachButton.onclick = () => imageFile.click();
+  iconButton.onclick = () => iconFile.click();
+  imageFile.onchange = async () => {
+    pendingImage = await readChosenImage(imageFile.files[0]);
+    attachName.textContent = pendingImage ? pendingImage.name : "";
+  };
+  iconFile.onchange = async () => {
+    pendingIcon = await readChosenImage(iconFile.files[0]);
+    iconName.textContent = pendingIcon ? pendingIcon.name : "";
+  };
+
+  function encodeImage(image) {
+    const out = new ProtoWriter();
+    out.string(1, image.mimeType);
+    out.bytesField(2, image.data);
+    out.varintField(3, image.sizeBytes);
+    return out.finish();
+  }
+
+  class ProtoWriter {
+    constructor() {
+      this.parts = [];
+      this.length = 0;
+    }
+    key(field, wire) {
+      this.varint((field << 3) | wire);
+    }
+    varintField(field, value) {
+      this.key(field, 0);
+      this.varint(value);
+    }
+    string(field, value) {
+      this.bytesField(field, enc.encode(value));
+    }
+    message(field, body) {
+      this.bytesField(field, body);
+    }
+    bytesField(field, bytes) {
+      this.key(field, 2);
+      this.varint(bytes.length);
+      this.bytes(bytes);
+    }
+    varint(value) {
+      const chunk = [];
+      let v = Number(value);
+      while (v > 127) {
+        chunk.push((v & 127) | 128);
+        v = Math.floor(v / 128);
+      }
+      chunk.push(v);
+      this.bytes(Uint8Array.from(chunk));
+    }
+    bytes(bytes) {
+      const part = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
+      this.parts.push(part);
+      this.length += part.length;
+    }
+    finish() {
+      const result = new Uint8Array(this.length);
+      let offset = 0;
+      for (const part of this.parts) {
+        result.set(part, offset);
+        offset += part.length;
+      }
+      return result;
+    }
+  }
+
+  function reader(bytes) { return { bytes, pos: 0 }; }
+  function eof(r) { return r.pos >= r.bytes.length; }
+  function readVarint(r) {
+    let shift = 0, result = 0;
+    while (r.pos < r.bytes.length) {
+      const b = r.bytes[r.pos++];
+      result += (b & 127) * Math.pow(2, shift);
+      if ((b & 128) === 0) return result;
+      shift += 7;
+    }
+    return result;
+  }
+  function readBytes(r) {
+    const len = readVarint(r);
+    const start = r.pos;
+    r.pos += len;
+    return r.bytes.slice(start, start + len);
+  }
+  function skip(r, wire) {
+    if (wire === 0) readVarint(r);
+    else if (wire === 2) readBytes(r);
+    else throw new Error(`unsupported wire type ${wire}`);
+  }
+  function decodeString(bytes) { return dec.decode(bytes); }
+  function decodeImage(bytes) {
+    const r = reader(bytes), image = { mimeType: "", data: new Uint8Array(), sizeBytes: 0 };
+    while (!eof(r)) {
+      const key = readVarint(r), field = key >> 3, wire = key & 7;
+      if (field === 1) image.mimeType = decodeString(readBytes(r));
+      else if (field === 2) image.data = readBytes(r);
+      else if (field === 3) image.sizeBytes = readVarint(r);
+      else skip(r, wire);
+    }
+    return image;
+  }
+  function decodeMessage(bytes) {
+    const r = reader(bytes), msg = { id: 0, from: "", text: "", to: "", private: false };
+    while (!eof(r)) {
+      const key = readVarint(r), field = key >> 3, wire = key & 7;
+      if (field === 1) msg.id = readVarint(r);
+      else if (field === 2) msg.from = decodeString(readBytes(r));
+      else if (field === 3) msg.text = decodeString(readBytes(r));
+      else if (field === 4) msg.to = decodeString(readBytes(r));
+      else if (field === 5) msg.image = decodeImage(readBytes(r));
+      else if (field === 6) msg.unixTime = readVarint(r);
+      else if (field === 7) msg.private = !!readVarint(r);
+      else if (field === 8) msg.senderIcon = decodeImage(readBytes(r));
+      else skip(r, wire);
+    }
+    return msg;
+  }
+  function decodeError(bytes) {
+    const r = reader(bytes), error = { code: 0, message: "" };
+    while (!eof(r)) {
+      const key = readVarint(r), field = key >> 3, wire = key & 7;
+      if (field === 1) error.code = readVarint(r);
+      else if (field === 2) error.message = decodeString(readBytes(r));
+      else skip(r, wire);
+    }
+    return error;
+  }
+  function decodeUser(bytes) {
+    const r = reader(bytes), user = { name: "" };
+    while (!eof(r)) {
+      const key = readVarint(r), field = key >> 3, wire = key & 7;
+      if (field === 1) user.name = decodeString(readBytes(r));
+      else skip(r, wire);
+    }
+    return user;
+  }
+  function decodeHistory(bytes) {
+    const r = reader(bytes), history = { messages: [], images: [], users: [] };
+    while (!eof(r)) {
+      const key = readVarint(r), field = key >> 3, wire = key & 7;
+      if (field === 1) history.messages.push(decodeMessage(readBytes(r)));
+      else if (field === 2) history.images.push(decodeImage(readBytes(r)));
+      else if (field === 3) history.lastImage = decodeImage(readBytes(r));
+      else if (field === 4) history.users.push(decodeUser(readBytes(r)));
+      else skip(r, wire);
+    }
+    return history;
+  }
+  function decodeServerResponse(bytes) {
+    const r = reader(bytes), resp = { serverSeq: 0, ok: false, info: "" };
+    while (!eof(r)) {
+      const key = readVarint(r), field = key >> 3, wire = key & 7;
+      if (field === 1) resp.serverSeq = readVarint(r);
+      else if (field === 2) resp.ok = !!readVarint(r);
+      else if (field === 3) resp.error = decodeError(readBytes(r));
+      else if (field === 4) resp.history = decodeHistory(readBytes(r));
+      else if (field === 5) resp.message = decodeMessage(readBytes(r));
+      else if (field === 6) resp.info = decodeString(readBytes(r));
+      else skip(r, wire);
+    }
+    return resp;
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package chat.v1;
+
+option go_package = "hw05chat/internal/protocol/chatpb";
+
+message Image {
+  string mime_type = 1;
+  bytes data = 2;
+  int32 size_bytes = 3;
+}
+
+message User {
+  string name = 1;
+
+  message Profile {
+    optional Image icon = 1;
+    bool has_icon = 2;
+  }
+
+  Profile profile = 2;
+}
+
+message ChatMessage {
+  int32 id = 1;
+  string from = 2;
+  string text = 3;
+  optional string to = 4;
+  optional Image image = 5;
+  int64 unix_time = 6;
+  bool private = 7;
+  optional Image sender_icon = 8;
+}
+
+message JoinRequest {
+  string name = 1;
+  optional Image icon = 2;
+  bool request_history = 3;
+  int32 max_history = 4;
+}
+
+message SendMessageRequest {
+  string text = 1;
+  optional string to = 2;
+  optional Image image = 3;
+}
+
+message PingRequest {
+  int64 unix_time = 1;
+}
+
+message ClientRequest {
+  int32 client_seq = 1;
+
+  oneof payload {
+    JoinRequest join = 2;
+    SendMessageRequest send = 3;
+    PingRequest ping = 4;
+  }
+}
+
+message Error {
+  int32 code = 1;
+  string message = 2;
+}
+
+message History {
+  repeated ChatMessage messages = 1;
+  repeated Image images = 2;
+  optional Image last_image = 3;
+  repeated User users = 4;
+}
+
+message ServerResponse {
+  int32 server_seq = 1;
+  bool ok = 2;
+  optional Error error = 3;
+  optional History history = 4;
+  optional ChatMessage message = 5;
+  string info = 6;
+}
